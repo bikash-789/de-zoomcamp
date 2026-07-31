@@ -1,0 +1,10 @@
+version: 2
+
+sources:
+  - name: raw_data
+    description: "Raw data for NYC taxi rides"
+    database: project-ce53f020-7477-40f6-a2c
+    schema: de_zoomcamp_ds
+    tables: 
+      - name: yellow_tripdata_ext_partitoned
+      - name: green_tripdata_ext
