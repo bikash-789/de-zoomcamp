@@ -1,4 +1,9 @@
-SELECT
+with source as (
+    select * from {{ source('raw_data', 'yellow_tripdata_ext_partitoned') }}
+),
+
+renamed as (
+    select 
     -- identifiers
     cast(VendorID as int64) as vendor_id,
     cast(RatecodeID as int64) as rate_code_id,
@@ -22,9 +27,11 @@ SELECT
     cast(tolls_amount as numeric) as tolls_amount,
     cast(improvement_surcharge as numeric) as improvement_surcharge,
     cast(total_amount as numeric) as total_amount,
-    0 as ehail_fee,
     cast(payment_type as int64) as payment_type,
     cast(congestion_surcharge as numeric) as congestion_surcharge
 
-FROM {{ source('raw_data', 'yellow_tripdata_ext_partitoned') }}
-WHERE vendorid is not null
+    from source
+    where VendorID is not null
+    )
+
+select * from renamed

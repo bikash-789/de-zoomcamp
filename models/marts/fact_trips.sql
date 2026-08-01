@@ -6,76 +6,64 @@
         - Find a way to enrich the column payment type. 
 */
 
-{{ config(materialized="table") }}
+-- Fact table containing all taxi trips enriched with zone information
+-- This is a classic star schema design: fact table (trips) joined to dimension table (zones)
+-- Materialized incrementally to handle large datasets efficiently
 
-with trips as (
+{{ config(
+    materialized='incremental',
+    unique_key='trip_id',
+    incremental_strategy='merge',
+    on_schema_change='append_new_columns'
+) }}
 
-    select *
-    from {{ ref("int_trips_unioned") }}
 
-),
+select
+    -- Trip identifiers
+    trips.trip_id,
+    trips.vendor_id,
+    trips.service_type,
+    trips.rate_code_id,
 
-deduplicated as (
-    select
-        *,
-        row_number() over (
-            partition by
-                vendor_id,
-                pickup_datetime,
-                dropoff_datetime,
-                pickup_location_id,
-                dropoff_location_id,
-                fare_amount
-            order by vendor_id
-        ) as rn
+    -- Location details (enriched with human-readable zone names from dimension)
+    trips.pickup_location_id,
+    pz.borough as pickup_borough,
+    pz.zone as pickup_zone,
+    trips.dropoff_location_id,
+    dz.borough as dropoff_borough,
+    dz.zone as dropoff_zone,
 
-    from trips
-),
+    -- Trip timing
+    trips.pickup_datetime,
+    trips.dropoff_datetime,
+    trips.store_and_fwd_flag,
 
-cleaned as (
-    select *
-    from deduplicated
-    where rn = 1
-),
+    -- Trip metrics
+    trips.passenger_count,
+    trips.trip_distance,
+    trips.trip_type,
+    {{ get_trip_duration_minutes('trips.pickup_datetime', 'trips.dropoff_datetime') }} as trip_duration_minutes,
 
-final as (
-    select
-        -- primary key
-        to_hex(
-            md5(
-                concat(
-                    cast(vendor_id as string),
-                    cast(pickup_datetime as string),
-                    cast(dropoff_datetime as string),
-                    cast(pickup_location_id as string),
-                    cast(dropoff_location_id as string),
-                    cast(fare_amount as string),
-                    cast(trip_distance as string)
-                )
-            )
-        ) as trip_id,
-        vendor_id,
-        rate_code_id,
-        pickup_datetime,
-        dropoff_datetime,
-        pickup_location_id,
-        dropoff_location_id,
-        store_and_fwd_flag,
-        passenger_count,
-        trip_distance,
-        fare_amount,
-        extra,
-        mta_tax,
-        tip_amount,
-        tolls_amount,
-        improvement_surcharge,
-        total_amount,
-        congestion_surcharge,
-        payment_type,
-        {{ get_payment_type_name('payment_type') }} as payment_type_description
+    -- Payment breakdown
+    trips.fare_amount,
+    trips.extra,
+    trips.mta_tax,
+    trips.tip_amount,
+    trips.tolls_amount,
+    trips.ehail_fee,
+    trips.improvement_surcharge,
+    trips.total_amount,
+    trips.payment_type,
+    trips.payment_type_description
 
-    from cleaned
-)
+from {{ ref('int_trips') }} as trips
+-- LEFT JOIN preserves all trips even if zone information is missing or unknown
+left join {{ ref('dim_zones') }} as pz
+    on trips.pickup_location_id = pz.location_id
+left join {{ ref('dim_zones') }} as dz
+    on trips.dropoff_location_id = dz.location_id
 
-select *
-from final
+{% if is_incremental() %}
+  -- Only process new trips based on pickup datetime
+  where trips.pickup_datetime > (select max(pickup_datetime) from {{ this }})
+{% endif %}
