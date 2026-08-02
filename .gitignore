@@ -221,7 +221,7 @@ __marimo__/
 # Files
 *.parquet
 *.csv*
-!seeds/*.csv
+!/analytics-engg/seeds/*.csv
 # Default .gitignore content added by dbt Cloud# you shouldn't commit these into source control
 # these are the default directory names, adjust/add to fit your needs
 target/
